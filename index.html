@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nebula — 3D-лендинг с эффектами</title>
+<style>
+  :root {
+    --bg: #06060a;
+    --fg: #f5f5f7;
+    --muted: #8b8b94;
+    --accent: #a78bfa;
+    --accent2: #ec4899;
+    --line: rgba(255,255,255,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  html, body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Fixed canvas background */
+  #three-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw; height: 100vh;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* Progress bar */
+  .progress {
+    position: fixed; top: 0; left: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    z-index: 20; width: 0;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 20px var(--accent);
+  }
+
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 40px;
+    z-index: 15;
+    backdrop-filter: blur(16px);
+    background: rgba(6,6,10,0.5);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .logo { font-weight: 600; letter-spacing: -0.02em; font-size: 18px; }
+  nav .logo span {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  nav ul { display: flex; gap: 32px; list-style: none; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color .2s; }
+  nav a:hover { color: var(--fg); }
+  nav .cta {
+    background: var(--fg); color: var(--bg);
+    padding: 10px 20px; border-radius: 999px;
+    text-decoration: none; font-size: 14px; font-weight: 500;
+  }
+
+  section {
+    position: relative;
+    z-index: 2;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: 120px 80px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  section .text {
+    max-width: 540px;
+  }
+  section.center { justify-content: center; text-align: center; }
+  section.center .text { max-width: 720px; margin: 0 auto; }
+  section.right { justify-content: flex-end; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 12px; color: var(--muted);
+    margin-bottom: 24px;
+    backdrop-filter: blur(8px);
+    background: rgba(255,255,255,0.02);
+  }
+  .pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: #4ade80; box-shadow: 0 0 10px #4ade80;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+
+  h1 {
+    font-size: clamp(44px, 7vw, 92px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 0.98;
+    margin-bottom: 28px;
+  }
+  h1 em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  h2 {
+    font-size: clamp(32px, 5vw, 56px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin-bottom: 20px;
+  }
+  p.lead {
+    font-size: 19px; color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 36px;
+  }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .center .actions { justify-content: center; }
+  .btn {
+    padding: 14px 24px; border-radius: 999px;
+    font-size: 15px; font-weight: 500;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary {
+    background: var(--fg); color: var(--bg);
+    box-shadow: 0 10px 40px rgba(167,139,250,0.3);
+  }
+  .btn-primary:hover { box-shadow: 0 15px 50px rgba(167,139,250,0.5); }
+  .btn-ghost {
+    color: var(--fg);
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.02);
+    backdrop-filter: blur(8px);
+  }
+
+  .scroll-hint {
+    position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--muted);
+    letter-spacing: 0.2em; text-transform: uppercase;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    animation: bob 2.5s ease-in-out infinite;
+  }
+  @keyframes bob { 50% { transform: translate(-50%, 8px); } }
+  .scroll-hint::after {
+    content: ''; width: 1px; height: 32px;
+    background: linear-gradient(to bottom, var(--muted), transparent);
+  }
+
+  .grid-features {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 20px; max-width: 540px;
+  }
+  .feat {
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: rgba(255,255,255,0.02);
+    backdrop-filter: blur(12px);
+  }
+  .feat .num {
+    font-size: 32px; font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .feat .label { color: var(--muted); font-size: 13px; line-height: 1.4; }
+
+  footer {
+    position: relative; z-index: 2;
+    padding: 60px 80px;
+    border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 13px;
+    display: flex; justify-content: space-between;
+    backdrop-filter: blur(12px);
+    background: rgba(6,6,10,0.6);
+  }
+
+  @media (max-width: 900px) {
+    nav { padding: 16px 20px; }
+    nav ul { display: none; }
+    section { padding: 100px 20px 40px; }
+    section.right { justify-content: flex-start; }
+    .grid-features { grid-template-columns: 1fr; }
+    footer { flex-direction: column; gap: 12px; padding: 40px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<canvas id="three-canvas"></canvas>
+
+<nav>
+  <div class="logo">Nebu<span>la</span></div>
+  <ul>
+    <li><a href="#">Продукт</a></li>
+    <li><a href="#">Решения</a></li>
+    <li><a href="#">Цены</a></li>
+    <li><a href="#">Блог</a></li>
+  </ul>
+  <a href="#" class="cta">Начать →</a>
+</nav>
+
+<!-- SECTION 1: HERO -->
+<section data-section="0">
+  <div class="text">
+    <div class="pill">Доступно для раннего доступа</div>
+    <h1>Строй будущее.<br/><em>В 3D.</em></h1>
+    <p class="lead">Платформа для команд, которые проектируют продукты следующего поколения. Интерактивная визуализация, реалтайм-рендер, бесшовная коллаборация.</p>
+    <div class="actions">
+      <a href="#" class="btn btn-primary">Попробовать бесплатно</a>
+      <a href="#" class="btn btn-ghost">Смотреть демо</a>
+    </div>
+  </div>
+  <div class="scroll-hint">Скролль вниз</div>
+</section>
+
+<!-- SECTION 2: FEATURES (model moves to left) -->
+<section class="right" data-section="1">
+  <div class="text">
+    <h2>Движок, который <em style="font-style:normal;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">не тормозит</em>.</h2>
+    <p class="lead">GPU-ускоренный рендер, адаптивное качество, умное кэширование. Твои демо грузятся за 0.3 секунды даже на телефоне.</p>
+    <div class="grid-features">
+      <div class="feat"><div class="num">120</div><div class="label">FPS в хроме на макбуке</div></div>
+      <div class="feat"><div class="num">0.3s</div><div class="label">TTFB на 3G</div></div>
+      <div class="feat"><div class="num">PBR</div><div class="label">материалы из коробки</div></div>
+      <div class="feat"><div class="num">GLTF</div><div class="label">импорт из Blender, Figma</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 3: CENTER (model zoomed, text behind) -->
+<section class="center" data-section="2">
+  <div class="text">
+    <h2>Один продукт.<br/><em style="font-style:normal;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Любой сценарий.</em></h2>
+    <p class="lead">От интерактивных мокапов до продакшн-пайплайна. Nebula покрывает весь путь от эскиза до релиза.</p>
+    <div class="actions">
+      <a href="#" class="btn btn-primary">Начать бесплатно →</a>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 4: CTA -->
+<section data-section="3">
+  <div class="text">
+    <h2>Готов попробовать?</h2>
+    <p class="lead">14 дней бесплатно, без кредитки. Отменить можно в один клик.</p>
+    <div class="actions">
+      <a href="#" class="btn btn-primary">Создать аккаунт</a>
+      <a href="#" class="btn btn-ghost">Назначить демо</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div>© 2026 Nebula. Все права защищены.</div>
+  <div>Сделано с 💜 в Екатеринбурге</div>
+</footer>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x06060a, 0.08);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 5);
+
+/* ------------- HDR ENVIRONMENT ------------- */
+const pmrem = new THREE.PMREMGenerator(renderer);
+new RGBELoader()
+  .setPath('https://threejs.org/examples/textures/equirectangular/')
+  .load('royal_esplanade_1k.hdr', (hdr) => {
+    hdr.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = pmrem.fromEquirectangular(hdr).texture;
+    hdr.dispose(); pmrem.dispose();
+  });
+
+/* ------------- HERO MESH WITH CUSTOM SHADER ------------- */
+const geometry = new THREE.IcosahedronGeometry(1.1, 32);
+
+// Iridescent fresnel shader with noise distortion
+const uniforms = {
+  uTime: { value: 0 },
+  uColorA: { value: new THREE.Color(0xa78bfa) },
+  uColorB: { value: new THREE.Color(0xec4899) },
+  uColorC: { value: new THREE.Color(0x22d3ee) },
+  uDistort: { value: 0.25 },
+  uFresnelPower: { value: 2.5 },
+};
+
+const vertexShader = /* glsl */ `
+  uniform float uTime;
+  uniform float uDistort;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying float vNoise;
+
+  // Classic 3D simplex noise by Ian McEwan
+  vec4 permute(vec4 x){ return mod(((x*34.0)+1.0)*x, 289.0); }
+  vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+  float snoise(vec3 v){
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod(i, 289.0);
+    vec4 p = permute( permute( permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+    float n_ = 1.0/7.0;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z *ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+  }
+
+  void main() {
+    vec3 pos = position;
+    float n = snoise(pos * 1.5 + uTime * 0.3);
+    vNoise = n;
+    pos += normal * n * uDistort;
+
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vViewDir = normalize(cameraPosition - worldPos.xyz);
+    vNormal = normalize(normalMatrix * normal);
+
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const fragmentShader = /* glsl */ `
+  uniform float uTime;
+  uniform vec3 uColorA;
+  uniform vec3 uColorB;
+  uniform vec3 uColorC;
+  uniform float uFresnelPower;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying float vNoise;
+
+  void main() {
+    float fres = pow(1.0 - max(dot(vNormal, vViewDir), 0.0), uFresnelPower);
+
+    // Iridescent gradient based on fresnel + noise + time
+    float t = fres + vNoise * 0.3 + uTime * 0.1;
+    vec3 iridescent = mix(uColorA, uColorB, 0.5 + 0.5 * sin(t * 3.14));
+    iridescent = mix(iridescent, uColorC, 0.5 + 0.5 * cos(t * 2.0));
+
+    // Core dark + glowing edge
+    vec3 col = iridescent * (0.3 + fres * 1.8);
+    col += pow(fres, 4.0) * uColorA * 2.0;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
+const mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
+
+// Wireframe overlay
+const wire = new THREE.LineSegments(
+  new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(1.14, 1)),
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 })
+);
+mesh.add(wire);
+
+/* ------------- PARTICLE FIELD ------------- */
+const particleCount = 1200;
+const particleGeo = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount * 3);
+const sizes = new Float32Array(particleCount);
+for (let i = 0; i < particleCount; i++) {
+  const r = 8 + Math.random() * 15;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+  positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  positions[i * 3 + 2] = r * Math.cos(phi);
+  sizes[i] = Math.random() * 2 + 0.5;
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+particleGeo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+
+const particleMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xa78bfa) } },
+  vertexShader: `
+    uniform float uTime;
+    attribute float aSize;
+    varying float vAlpha;
+    void main() {
+      vec3 pos = position;
+      pos.y += sin(uTime * 0.3 + pos.x * 0.5) * 0.3;
+      pos.x += cos(uTime * 0.2 + pos.z * 0.5) * 0.3;
+      vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+      gl_PointSize = aSize * (300.0 / -mv.z);
+      vAlpha = 1.0 - smoothstep(10.0, 25.0, length(pos));
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uColor;
+    varying float vAlpha;
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float d = length(c);
+      if (d > 0.5) discard;
+      float a = (1.0 - d * 2.0);
+      a = pow(a, 2.0);
+      gl_FragColor = vec4(uColor, a * vAlpha * 0.8);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+
+const particles = new THREE.Points(particleGeo, particleMat);
+scene.add(particles);
+
+/* ------------- LIGHTS ------------- */
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const key = new THREE.DirectionalLight(0xffffff, 1.0);
+key.position.set(3, 4, 5);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xec4899, 0.8);
+rim.position.set(-3, -2, -1);
+scene.add(rim);
+
+/* ------------- POSTPROCESSING: BLOOM ------------- */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6,  // strength
+  0.4,  // radius
+  0.15  // threshold
+);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ------------- SCROLL CHAPTERS ------------- */
+// Each scroll section = a camera + model + lighting pose
+const scenes = [
+  {
+    // 0: HERO — model on right, slight rotation
+    modelPos: new THREE.Vector3(2.2, 0, 0),
+    modelRot: new THREE.Vector3(0, 0.5, 0),
+    modelScale: 1.0,
+    cameraPos: new THREE.Vector3(0, 0, 5),
+    distort: 0.25,
+    colorA: new THREE.Color(0xa78bfa),
+    colorB: new THREE.Color(0xec4899),
+  },
+  {
+    // 1: FEATURES — model on left
+    modelPos: new THREE.Vector3(-2.2, 0, 0),
+    modelRot: new THREE.Vector3(0.3, 2.2, 0.3),
+    modelScale: 0.9,
+    cameraPos: new THREE.Vector3(0, 0, 5),
+    distort: 0.15,
+    colorA: new THREE.Color(0x22d3ee),
+    colorB: new THREE.Color(0xa78bfa),
+  },
+  {
+    // 2: CENTER — model BIG behind text, slow rotate
+    modelPos: new THREE.Vector3(0, 0, 0),
+    modelRot: new THREE.Vector3(0.5, 4.0, 0.2),
+    modelScale: 2.8,
+    cameraPos: new THREE.Vector3(0, 0, 7),
+    distort: 0.4,
+    colorA: new THREE.Color(0xec4899),
+    colorB: new THREE.Color(0xf59e0b),
+  },
+  {
+    // 3: CTA — model floating, pulsing
+    modelPos: new THREE.Vector3(2.0, 0.5, 0),
+    modelRot: new THREE.Vector3(0.4, 5.5, -0.3),
+    modelScale: 1.1,
+    cameraPos: new THREE.Vector3(0, 0, 5),
+    distort: 0.3,
+    colorA: new THREE.Color(0xa78bfa),
+    colorB: new THREE.Color(0x22d3ee),
+  },
+];
+
+// Current smoothed state
+const current = {
+  modelPos: scenes[0].modelPos.clone(),
+  modelRot: scenes[0].modelRot.clone(),
+  modelScale: scenes[0].modelScale,
+  cameraPos: scenes[0].cameraPos.clone(),
+  distort: scenes[0].distort,
+  colorA: scenes[0].colorA.clone(),
+  colorB: scenes[0].colorB.clone(),
+};
+
+function getScrollProgress() {
+  const doc = document.documentElement;
+  const total = doc.scrollHeight - window.innerHeight;
+  return Math.max(0, Math.min(1, window.scrollY / total));
+}
+
+function sampleScene(progress) {
+  // progress 0..1 maps across (scenes.length - 1) segments
+  const n = scenes.length - 1;
+  const t = progress * n;
+  const i = Math.floor(t);
+  const i2 = Math.min(i + 1, n);
+  const localT = t - i;
+  const easeT = localT < 0.5 ? 2 * localT * localT : 1 - Math.pow(-2 * localT + 2, 2) / 2;
+
+  const a = scenes[i], b = scenes[i2];
+  const out = {
+    modelPos: new THREE.Vector3().lerpVectors(a.modelPos, b.modelPos, easeT),
+    modelRot: new THREE.Vector3().lerpVectors(a.modelRot, b.modelRot, easeT),
+    modelScale: THREE.MathUtils.lerp(a.modelScale, b.modelScale, easeT),
+    cameraPos: new THREE.Vector3().lerpVectors(a.cameraPos, b.cameraPos, easeT),
+    distort: THREE.MathUtils.lerp(a.distort, b.distort, easeT),
+    colorA: a.colorA.clone().lerp(b.colorA, easeT),
+    colorB: a.colorB.clone().lerp(b.colorB, easeT),
+  };
+  return out;
+}
+
+/* ------------- RESPONSIVE ------------- */
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloom.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+/* ------------- ANIMATION LOOP ------------- */
+const clock = new THREE.Clock();
+const progressBar = document.getElementById('progress');
+const DAMP = 0.07;  // smaller = smoother
+
+function tick() {
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+  const progress = getScrollProgress();
+  progressBar.style.width = (progress * 100) + '%';
+
+  const target = sampleScene(progress);
+
+  // Smooth damping (lerp)
+  current.modelPos.lerp(target.modelPos, DAMP);
+  current.modelRot.lerp(target.modelRot, DAMP);
+  current.modelScale += (target.modelScale - current.modelScale) * DAMP;
+  current.cameraPos.lerp(target.cameraPos, DAMP);
+  current.distort += (target.distort - current.distort) * DAMP;
+  current.colorA.lerp(target.colorA, DAMP);
+  current.colorB.lerp(target.colorB, DAMP);
+
+  // Apply to mesh
+  mesh.position.copy(current.modelPos);
+  mesh.scale.setScalar(current.modelScale);
+  // Base rotation from state + continuous spin
+  mesh.rotation.set(
+    current.modelRot.x,
+    current.modelRot.y + (reduceMotion ? 0 : elapsed * 0.25),
+    current.modelRot.z,
+  );
+
+  camera.position.copy(current.cameraPos);
+  camera.lookAt(0, 0, 0);
+
+  // Pulse scale slightly on breath
+  if (!reduceMotion) {
+    const breath = 1 + Math.sin(elapsed * 1.2) * 0.03;
+    mesh.scale.multiplyScalar(breath);
+  }
+
+  // Update uniforms
+  uniforms.uTime.value = elapsed;
+  uniforms.uDistort.value = current.distort;
+  uniforms.uColorA.value.copy(current.colorA);
+  uniforms.uColorB.value.copy(current.colorB);
+
+  particleMat.uniforms.uTime.value = elapsed;
+  particles.rotation.y = elapsed * 0.02;
+
+  composer.render();
+  requestAnimationFrame(tick);
+}
+tick();
+
+/* ------------- MOUSE PARALLAX ------------- */
+if (!reduceMotion) {
+  const mouse = new THREE.Vector2();
+  const target = new THREE.Vector2();
+  window.addEventListener('pointermove', (e) => {
+    target.x = (e.clientX / window.innerWidth) * 2 - 1;
+    target.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  });
+  setInterval(() => {
+    mouse.lerp(target, 0.1);
+    scene.rotation.y = mouse.x * 0.12;
+    scene.rotation.x = -mouse.y * 0.08;
+  }, 16);
+}
+</script>
+
+</body>
+</html>
